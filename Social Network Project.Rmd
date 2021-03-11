@@ -1,0 +1,712 @@
+---
+title: "Marvel Social Network Analysis"
+author: "Laura Le"
+date: "2/18/2021"
+output: html_document
+---
+
+
+## DATASET:
+
+#### The Marvel Universal Social Network : https://www.kaggle.com/csanhueza/the-marvel-universe-social-network.
+
+#### The dataset contains heroes and comics, and the relationship between them. The dataset is divided into three files: node types (hero, comic), edges ( which comic the heroes appear) and hero-edge (heroes which appear together in the comics).
+
+
+## PROBLEM DESCRIPTION:
+
+#### There are hundreds of thousands of heroes in the Marvel Universe and they appear in an extensive list of comics. I'm interested in learning the relationship among heroes and how they appear in comics. 
+
+#### There are several questions that I will analyze this social network to figure out the answers:
+ 
+#### - What is the most popular heroes in Marvel comics?
+#### - Which heroes usually appear together?
+#### - How the teams are formed and the connections between members?
+
+
+## GENERAL APPROACH:
+
+#### I will explore this social network problem by evaluating the network size, density, centralization, reciprocity and hierarchy of different levels of network:
+
+#### - Node: node level analysis to understand which nodes have higher degree centrality in the network. By determining the betweenness centrality and closeness centrality, I could define the importance or position of each actor in the Marvel universe social network.
+
+#### - Sub-group level: sub-group level analysis to detect communities in Marvel network by finding dense subgraph because the team expects the graph to be relatively dense with high connectivity.
+
+
+```{r}
+library(ggplot2)
+library(readr) 
+library(igraph) 
+library(dplyr)
+```
+
+
+```{r}
+#### Import data
+
+edges <- read.csv("~/Documents/Network class/Data Marvel/edges.csv")
+hero.network <- read.csv("~/Documents/Network class/Data Marvel/hero-network.csv", header=FALSE)
+nodes <- read.csv("~/Documents/Network class/Data Marvel/nodes.csv")
+```
+
+```{r}
+head(edges,10)
+```
+
+```{r}
+head(hero.network,10)
+```
+
+```{r}
+head(nodes,10)
+```
+
+```{r}
+# Get the dimension and see every column in dataframes
+
+dim(edges) #there are 96104 observations of 2 variables
+glimpse(edges)
+
+dim(hero.network) #there are 574468 observations of 2 variables
+glimpse(hero.network)
+
+dim(nodes) #there are 19090 observations of 2 variables
+glimpse(nodes)
+```
+
+```{r}
+# Top 5 heroes appear the most in all Marvel comics
+
+edges_top<-edges%>%select(hero)%>%group_by(hero)%>%summarize(count=n())%>%arrange(desc(count))
+edges_top<-as.data.frame(edges_top[1:20,])
+head(edges_top)
+```
+
+```{r}
+# Plot top 20 characters that have highest appearancy in Marvel comics
+
+edges_top_plot<-edges%>%filter(hero%in%edges_top$hero)
+g <- ggplot(edges_top_plot, aes(hero))
+g + geom_bar(fill = "#000000")+coord_flip()
+```
+
+
+#### Create 3 sample graphs from the Marvel Social network
+
+
+```{r}
+# Sample Social Network graph (1)
+
+set.seed(1234)
+herodf1 <- head(hero.network,100)
+hero_g1<-graph_from_data_frame(herodf1, directed = F)
+```
+
+```{r}
+# Sample Social Network graph (2)
+
+N <- 1600
+hero.network2 <- hero.network[-(1:N), , drop = FALSE]
+herodf2 <- head(hero.network2,100)
+hero_g2<-graph_from_data_frame(herodf2, directed = F)
+```
+
+```{r}
+# Sample Social Network graph (3)
+
+herodf3 <- tail(hero.network,100)
+hero_g3<-graph_from_data_frame(herodf3, directed = F)
+```
+
+
+### Analyze Social Network graph (1)
+
+
+#### NODE ANALYSIS
+
+
+```{r}
+# Check graph edges and vertices
+
+V(hero_g1) #contents in vertices
+gorder(hero_g1) # Count number of vertices
+E(hero_g1) #contents in edges
+gsize(hero_g1)# Count number of edges
+```
+
+```{r}
+# Measure the size of network
+
+diameter(hero_g1, directed=FALSE, weights=NA) #the length of the longest path between two nodes is 4
+get_diameter(hero_g1, directed=FALSE, weights=NA) # identify the longest path
+```
+
+```{r}
+# Plot social networks
+
+plot(hero_g1, layout = layout_with_lgl(hero_g1), vertex.label=NA)
+```
+
+```{r}
+# Compute edge_density
+
+edge_density(hero_g1)
+```
+
+```{r}
+# Compute mean_distance of graph
+
+mean_distance(hero_g1, directed = FALSE)
+```
+
+
+```{r}
+# Compute clustering coefficient to find the probability that the adjacent vertices of a vertex are connected
+
+transitivity(hero_g1, type = "average") 
+```
+
+```{r}
+# Calculate the degree
+
+hero_deg <- degree(hero_g1, mode = c("all"))
+which.max(hero_deg)
+
+
+# Top 3 most popular
+
+top<-mean(hero_deg)+ 1.5*sd(hero_deg)
+length(hero_deg[hero_deg>top])
+hero_deg[hero_deg>top]
+```
+
+```{r}
+# Calculate betweenness of each vertex to find the degree of which heroes stand between each other
+
+betw <- betweenness(hero_g1, directed = F)
+which.max(betw)
+
+# Betweeness of top most popular heroes
+
+top<-mean(betw)+ 0.8*sd(betw)
+length(betw[betw>top])
+betw[betw>top]
+```
+
+```{r}
+# Identify key nodes using eigenvector centrality to measure the influence of a node in a network
+
+g.ec <- eigen_centrality(hero_g1)
+which.max(g.ec$vector)
+
+
+# Measure the influence of top most popular heroes
+
+top<-mean(g.ec$vector)+ 1.8*sd(g.ec$vector)
+length(g.ec$vector[g.ec$vector>top])
+g.ec$vector[g.ec$vector>top]
+```
+
+```{r}
+# Sir Denis Nayland Smith is having the most connections and control over the network.
+# Find who is around Sir Denis Nayland Smith ?
+
+g_sdennis <- make_ego_graph(hero_g1, diameter(hero_g1), nodes = 'SMITH, SIR DENIS NAY', mode = c("all"))[[1]]
+V(g_sdennis)$color <- ifelse(V(g_sdennis)$name=="SMITH, SIR DENIS NAY","blue","pink")
+plot(g_sdennis, vertex.label=NA)
+```
+
+```{r}
+# Neighbors of Sir Denis Nayland Smith
+
+unique(neighbors(hero_g1, v=which(V(hero_g1)$name=="SMITH, SIR DENIS NAY")))
+```
+
+```{r}
+# Black Panther is the most influence character
+# Find who is around Black Panther ?
+
+g_blackpanther <- make_ego_graph(hero_g1, diameter(hero_g1), nodes = "BLACK PANTHER/T'CHAL", mode = c("all"))[[1]]
+V(g_blackpanther)$color <- ifelse(V(g_blackpanther)$name=="BLACK PANTHER/T'CHAL","blue","pink")
+plot(g_blackpanther, vertex.label=NA)
+```
+
+```{r}
+# Neighbors of Black Panther
+
+unique(neighbors(hero_g1, v=which(V(hero_g1)$name=="BLACK PANTHER/T'CHAL")))
+```
+
+
+```{r}
+# Use centrality to summarize which Marvel characteristics have more connections than others 
+
+hero_g_eigen_centrality_people=as.data.frame(eigen_centrality(hero_g1)$vector)
+hero_g_eigen_centrality_people$hero=rownames(hero_g_eigen_centrality_people)
+rownames(hero_g_eigen_centrality_people)<-1:nrow(hero_g_eigen_centrality_people)
+colnames(hero_g_eigen_centrality_people)<-c("eigen_centrality_score","hero")
+hero_g_eigen_centrality_people_20<-hero_g_eigen_centrality_people[1:20,] #identify which Marvel characteristics are more important than others in selected first 20 characters
+```
+
+```{r}
+# According to eigen centrality score, Black Panther and Li'l Abner are the most influence nodes within this network
+
+herro_connection <- ggplot(hero_g_eigen_centrality_people_20, aes(x=hero,y=eigen_centrality_score))
+herro_connection + geom_bar(stat="identity", fill = "#000000")+coord_flip()
+```
+
+
+#### SUBGROUP ANALYSIS
+
+
+```{r}
+# Identify clusters or communities of nodes in hero network
+
+components(hero_g1) #this network has 4 components
+```
+
+```{r}
+# We will analyze the component 4 which have the largest size
+
+hero_subgroup1 <- decompose(hero_g1)[[4]]
+```
+
+```{r}
+par(mar=c(0,0,0,0))
+V(hero_subgroup1)$color <- ifelse(V(hero_subgroup1)$name=="SMITH, SIR DENIS NAY","blue","pink")
+plot(hero_subgroup1,cex=0.5)
+```
+
+```{r}
+cluster_infomap(hero_subgroup1)
+```
+
+```{r}
+# Map the flow of information in hero network, and the different clusters in which information may get remain for longer periods
+
+comm <- cluster_infomap(hero_subgroup1)
+modularity(comm) # modularity score
+```
+
+```{r}
+# Plot the resulting communities
+
+par(mar=c(0,0,0,0))
+plot(comm, hero_subgroup1)
+```
+
+
+### Analyze Social Network graph (2)
+
+
+#### NODE ANALYSIS
+
+
+```{r}
+# Check graph edges and vertices
+
+V(hero_g2) #contents in vertices
+gorder(hero_g2) # Count number of vertices
+E(hero_g2) #contents in edges
+gsize(hero_g2)# Count number of edges
+```
+
+```{r}
+# Measure the size of network
+
+diameter(hero_g2, directed=FALSE, weights=NA) #the length of the longest path between two nodes is 4
+get_diameter(hero_g2, directed=FALSE, weights=NA) # identify the longest path
+```
+
+```{r}
+# Plot social networks
+
+plot(hero_g2, layout = layout_with_lgl(hero_g2), vertex.label=NA)
+```
+
+```{r}
+# Compute edge_density
+
+edge_density(hero_g2)
+```
+
+```{r}
+# Compute mean_distance of graph
+
+mean_distance(hero_g2, directed = FALSE)
+```
+
+```{r}
+# Compute clustering coefficient to find the probability that the adjacent vertices of a vertex are connected
+
+transitivity(hero_g2, type = "average") 
+```
+
+```{r}
+# Calculate the degree
+
+hero_deg <- degree(hero_g2, mode = c("all"))
+which.max(hero_deg)
+
+# Top most popular
+
+top<-mean(hero_deg)+ 0.8*sd(hero_deg)
+length(hero_deg[hero_deg>top])
+hero_deg[hero_deg>top]
+```
+
+```{r}
+# Calculate betweenness of each vertex to find the degree of which heroes stand between each other
+
+betw <- betweenness(hero_g2, directed = F)
+which.max(betw)
+
+# Betweeness of top most popular heroes
+
+top<-mean(betw)+ 0.9*sd(betw)
+length(betw[betw>top])
+betw[betw>top]
+```
+
+```{r}
+# Identify key nodes using eigenvector centrality to measure the influence of a node in a network
+
+g.ec <- eigen_centrality(hero_g2)
+which.max(g.ec$vector)
+
+# Measure the influence of top most popular heroes
+
+top<-mean(g.ec$vector)+ 1.2*sd(g.ec$vector)
+length(g.ec$vector[g.ec$vector>top])
+g.ec$vector[g.ec$vector>top]
+```
+
+```{r}
+# Spider Man is the most influence character and has most connections in the network.
+# Find who is around Spider Man ?
+
+g_spiderman <- make_ego_graph(hero_g2, diameter(hero_g2), nodes = 'SPIDER-MAN/PETER PAR', mode = c("all"))[[1]]
+V(g_spiderman)$color <- ifelse(V(g_spiderman)$name=="SPIDER-MAN/PETER PAR","blue","pink")
+plot(g_spiderman, vertex.label=NA)
+```
+
+```{r}
+# Neighbors of Spider Man
+
+unique(neighbors(hero_g2, v=which(V(hero_g2)$name=="SPIDER-MAN/PETER PAR")))
+```
+
+```{r}
+# Warren Kenneth is having the most control over the network
+# Find who is around Warren Kenneth ?
+
+g_warren <- make_ego_graph(hero_g2, diameter(hero_g2), nodes = "ANGEL/WARREN KENNETH", mode = c("all"))[[1]]
+V(g_warren)$color <- ifelse(V(g_warren)$name=="ANGEL/WARREN KENNETH","blue","pink")
+plot(g_warren, vertex.label=NA)
+```
+
+```{r}
+# Neighbors of Warren Kenneth
+
+unique(neighbors(hero_g2, v=which(V(hero_g2)$name=="ANGEL/WARREN KENNETH")))
+```
+
+```{r}
+# Use centrality to summarize which Marvel characteristics have more connections than others 
+
+hero_g_eigen_centrality_people=as.data.frame(eigen_centrality(hero_g2)$vector)
+hero_g_eigen_centrality_people$hero=rownames(hero_g_eigen_centrality_people)
+rownames(hero_g_eigen_centrality_people)<-1:nrow(hero_g_eigen_centrality_people)
+colnames(hero_g_eigen_centrality_people)<-c("eigen_centrality_score","hero")
+hero_g_eigen_centrality_people_20<-hero_g_eigen_centrality_people[1:20,] #identify which Marvel characteristics are more important than others in selected first 20 characters
+```
+
+```{r}
+# According to eigen centrality score, Spider Man is the most influence node within this network
+
+herro_connection <- ggplot(hero_g_eigen_centrality_people_20, aes(x=hero,y=eigen_centrality_score))
+herro_connection + geom_bar(stat="identity", fill = "#000000")+coord_flip()
+```
+
+
+#### SUBGROUP ANALYSIS
+
+
+```{r}
+# Identify clusters or communities of nodes in hero network
+
+components(hero_g2) #this network has 1 components
+```
+
+```{r}
+hero_subgroup2 <- decompose(hero_g2)[[1]]
+```
+
+```{r}
+par(mar=c(0,0,0,0))
+V(hero_subgroup2)$color <- ifelse(V(hero_subgroup2)$name=="ANGEL/WARREN KENNETH","blue","pink")
+plot(hero_subgroup2,cex=0.005)
+```
+
+```{r}
+cluster_infomap(hero_subgroup2)
+```
+
+```{r}
+# Map the flow of information in hero network, and the different clusters in which information may get remain for longer periods
+
+comm <- cluster_infomap(hero_subgroup2)
+modularity(comm) # modularity score
+```
+
+```{r}
+# Plot the resulting communities
+
+par(mar=c(0,0,0,0))
+plot(comm, hero_subgroup2,cex=0.0005)
+```
+
+
+### Analyze Social Network graph 3
+
+
+#### NODE ANALYSIS
+
+
+```{r}
+# Check graph edges and vertices
+
+V(hero_g3) #contents in vertices
+gorder(hero_g3) # Count number of vertices
+E(hero_g3) #contents in edges
+gsize(hero_g3)# Count number of edges
+```
+
+```{r}
+# Measure the size of network
+
+diameter(hero_g3, directed=FALSE, weights=NA) #the length of the longest path between two nodes is 4
+get_diameter(hero_g3, directed=FALSE, weights=NA) # identify the longest path
+```
+
+```{r}
+# Plot social networks
+
+plot(hero_g3, layout = layout_with_lgl(hero_g3), vertex.label=NA)
+```
+
+```{r}
+# Compute edge_density
+
+edge_density(hero_g3)
+```
+
+```{r}
+# Compute mean_distance of graph
+
+mean_distance(hero_g3, directed = FALSE)
+```
+
+```{r}
+# Compute clustering coefficient to find the probability that the adjacent vertices of a vertex are connected.
+
+transitivity(hero_g3, type = "average") 
+```
+
+```{r}
+# Calculate the degree
+
+hero_deg <- degree(hero_g3, mode = c("all"))
+which.max(hero_deg)
+
+
+# Top most popular
+
+top<-mean(hero_deg)+ 0.52*sd(hero_deg)
+length(hero_deg[hero_deg>top])
+hero_deg[hero_deg>top]
+```
+
+```{r}
+# Calculate betweenness of each vertex to find the degree of which heroes stand between each other.
+
+betw <- betweenness(hero_g3, directed = F)
+which.max(betw)
+
+# Betweeness of top most popular heroes
+
+top<-mean(betw)+ 0.8*sd(betw)
+length(betw[betw>top])
+betw[betw>top]
+```
+
+```{r}
+# Identify key nodes using eigenvector centrality to measure the influence of a node in a network.
+
+g.ec <- eigen_centrality(hero_g3)
+which.max(g.ec$vector)
+
+
+# Measure the influence of top most popular heroes
+
+top<-mean(g.ec$vector)+ 0.45*sd(g.ec$vector)
+length(g.ec$vector[g.ec$vector>top])
+g.ec$vector[g.ec$vector>top]
+```
+
+```{r}
+# Captain America has most connections and control in the network.
+# Find who is around Captain American ?
+
+g_ca <- make_ego_graph(hero_g3, diameter(hero_g3), nodes = 'CAPTAIN AMERICA', mode = c("all"))[[1]]
+V(g_ca)$color <- ifelse(V(g_ca)$name=="CAPTAIN AMERICA","blue","pink")
+plot(g_ca, vertex.label=NA)
+```
+
+```{r}
+# Neighbors of Captain America
+
+unique(neighbors(hero_g3, v=which(V(hero_g3)$name=="CAPTAIN AMERICA")))
+```
+
+```{r}
+# Wolfsbane is having the most influence in the network
+# Find who is around Wolfsbane?
+
+g_scarlet <- make_ego_graph(hero_g3, diameter(hero_g3), nodes = 'WOLFSBANE/RAHNE SINC', mode = c("all"))[[1]]
+V(g_scarlet)$color <- ifelse(V(g_scarlet)$name=="WOLFSBANE/RAHNE SINC","blue","pink")
+plot(g_scarlet, vertex.label=NA)
+```
+
+```{r}
+# Neighbors of Wolfsbane
+
+unique(neighbors(hero_g3, v=which(V(hero_g3)$name=="WOLFSBANE/RAHNE SINC")))
+```
+
+
+```{r}
+# Use centrality to summarize which Marvel characteristics have more connections than others 
+
+hero_g_eigen_centrality_people=as.data.frame(eigen_centrality(hero_g3)$vector)
+hero_g_eigen_centrality_people$hero=rownames(hero_g_eigen_centrality_people)
+rownames(hero_g_eigen_centrality_people)<-1:nrow(hero_g_eigen_centrality_people)
+colnames(hero_g_eigen_centrality_people)<-c("eigen_centrality_score","hero")
+hero_g_eigen_centrality_people_20<-hero_g_eigen_centrality_people[1:20,] #identify which Marvel characteristics are more important than others in selected first 20 characters
+```
+
+```{r}
+# According to eigen centrality score, Captain America is one of the most influence node within this network
+
+herro_connection <- ggplot(hero_g_eigen_centrality_people_20, aes(x=hero,y=eigen_centrality_score))
+herro_connection + geom_bar(stat="identity", fill = "#000000")+coord_flip()
+```
+
+#### SUBGROUP ANALYSIS
+
+
+```{r}
+# Identify clusters or communities of nodes in hero network
+
+components(hero_g3) #this network has 2 components
+```
+
+```{r}
+# We will analyze the component 1 which have the largest size
+
+hero_subgroup3 <- decompose(hero_g3)[[1]]
+```
+
+```{r}
+par(mar=c(0,0,0,0))
+V(hero_subgroup3)$color <- ifelse(V(hero_subgroup3)$name=="CAPTAIN AMERICA","blue","pink")
+plot(hero_subgroup3,cex=0.05)
+```
+
+```{r}
+cluster_infomap(hero_subgroup3)
+```
+
+```{r}
+# Map the flow of information in hero network, and the different clusters in which information may get remain for longer periods
+
+comm <- cluster_infomap(hero_subgroup3)
+modularity(comm) # modularity score
+```
+
+```{r}
+# Plot the resulting communities
+
+par(mar=c(0,0,0,0))
+plot(comm, hero_subgroup3,cex=0.05)
+```
+
+
+
+## CONCLUSION:
+
+#### Top 5 most popular characters of this social network are Spider man, Captain America, Iron man, Thing, Thor and Human Torch respectively. 
+
+#### - I selected random 3 subsets of this social network data to analyze the relationship between characters and looking for if there is any pattern between these subset datasets.
+
+#### - In the Graph (1), Sir Denis Nayland Smith is the character having the most connections and control over the network (1).Black Panther is the most influence character.There are 2 different clusters in this network.
+
+#### - In the Graph (2), Spider Man is the most influence character and has most connections in the network (2). Warren Kenneth is having the most control over the network. There are 3 different clusters in this network.
+
+#### - In the Graph (3), Captain America is the character having the most connections and control over the network (3). Wolfsbane is the most influence character. This network only contain 1 community.
+
+#### - We noticed that in 3 different subsets, we could see the appearances of top popular characters in the network such as Captain America, Spider Man, Iron Man, which means they the more popular of the characters, the more relationship they have with other heroes in the network.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
